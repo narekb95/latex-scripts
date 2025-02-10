@@ -1,10 +1,7 @@
 # TODO
-# 1. delete whole line if an if aline
 # 2. make command line arguments
-# 3. allow multiple ignore conditions at once
 # 4. handle comment environment
 # 5. delete newif and longrue longfalse
-# 6. handle nested ifs
 # 7. add command line argument to delete comments
 
 
@@ -12,18 +9,14 @@ import re
 
 
 
-def handle_output(line, curr_pos, match, stack, condition):
+def handle_output(line, curr_pos, match, matched_condition):
     out = ''
     command_pos = match.start() if match else None
 
     prefix = line[curr_pos:command_pos]
     out+=prefix
 
-    if not match:
-        return
-    if (match.group(0)).startswith('\\if') and match.group(1) != condition \
-        or match.group(0) == '\\else' and stack[-1][0] != condition \
-        or match.group(0) == '\\fi' and stack[-1][0] != condition:
+    if matched_condition is None:
             out+=match.group(0)
 
     return out
@@ -40,7 +33,7 @@ def reduce_comment(line):
         comment = ''
     return line, comment
 
-def process_latex_file(input_filename, output_filename, condition, ignore_if):
+def process_latex_file(input_filename, output_filename, conditions):
     # Stack to keep track of \ifword conditions
     ignore_count = 0  # Counter to track nested \if{condition}
 
@@ -52,8 +45,8 @@ def process_latex_file(input_filename, output_filename, condition, ignore_if):
 
 
     with open(input_filename, 'r', encoding='utf-8') as infile, open(output_filename, 'w', encoding='utf-8') as outfile:
-
         stack = []
+
         for line in infile:
             if len(line.strip()) == 0:
                 outfile.write(line)
@@ -73,31 +66,42 @@ def process_latex_file(input_filename, output_filename, condition, ignore_if):
             curr_match = next(all_matches, None)
             start_pos = 0
 
+            def get_current_condition(match, stack_top_condition):
+                if match.group(0).startswith('\\if'):
+                    return [match.group(1), 'if']
+                elif match.group(0) in ['\\else', '\\fi']:
+                    return [stack_top_condition, match.group(0)[1:]]
+                raise ValueError("Invalid match", match.group(0))
+                return None
+                
+
             while curr_match:
+                curr_command = get_current_condition(curr_match, stack[-1][0] if len(stack) else None)
+                matched_condition = next((condition for condition in conditions if condition[0] == curr_command[0]), None)
+                ignore_condition = matched_condition[1] if matched_condition else False
+                
                 if ignore_count == 0:
-                    out += handle_output(line, start_pos, curr_match, stack, condition)
-                    
-                if curr_match.group(0).startswith('\\if') \
-                    and curr_match.group(1) in defined_ifs:
-                    stack.append((curr_match.group(1), "if"))
-                    if curr_match.group(1) == condition:
-                        if ignore_if:
+                    out += handle_output(line, start_pos, curr_match, matched_condition)
+
+                if curr_command[1] == 'if' and curr_command[0] in defined_ifs:
+                    stack.append(curr_command)
+                    if matched_condition and ignore_condition:
                             ignore_count += 1
-                elif curr_match.group(0) == '\\else':
-                    top_if, _ = stack.pop()
-                    stack.append((top_if, "else"))
-                    if top_if == condition:
-                        if not ignore_if:
-                            ignore_count += 1
-                        else:
+                elif curr_command[1] == 'else':
+                    stack[-1] = curr_command
+                    if matched_condition:
+                        if ignore_condition:
                             ignore_count -= 1
-                elif curr_match.group(0) == '\\fi':
-                    top_if, state = stack.pop()
-                    if top_if == condition and \
-                        ((ignore_if and state == "if" )
-                         or (not ignore_if and state == "else")):
-                        ignore_count -= 1
-                        
+                        else:
+                            ignore_count += 1
+                elif curr_command[1] == 'fi':
+                    state=stack[-1][1]
+                    stack.pop()
+                    if matched_condition:
+                        if (state == 'if' and  ignore_condition)\
+                            or (state == 'else' and not ignore_condition):
+                            ignore_count -= 1
+
                 start_pos = curr_match.end()
                 curr_match = next(all_matches, None)
 
@@ -111,14 +115,6 @@ def process_latex_file(input_filename, output_filename, condition, ignore_if):
 
 # Example usage
 input_filename = "main.tex"  # Replace with the actual LaTeX file
-output_filename = "output1.tex"
-condition = "short"  # Replace with the desired condition to ignore
-ignore_if = True  # Set to False to ignore \else instead of \if
-process_latex_file(input_filename, output_filename, condition, ignore_if)
-
-
-input_filename = "output.tex"  # Replace with the actual LaTeX file
-output_filename = "output2.tex"
-condition = "long"  # Replace with the desired condition to ignore
-ignore_if = False  # Set to False to ignore \else instead of \if
-process_latex_file(input_filename, output_filename, condition, ignore_if)
+output_filename = "output.tex"
+conditions = [("long", False), ("short", True)]  # List of conditions to ignore
+process_latex_file(input_filename, output_filename, conditions)
