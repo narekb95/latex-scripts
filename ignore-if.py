@@ -12,20 +12,25 @@ import re
 
 
 
-def handle_output(line, curr_pos, match, stack, condition, outfile):
+def handle_output(line, curr_pos, match, stack, condition):
+    out = ''
     command_pos = match.start() if match else None
+
     prefix = line[curr_pos:command_pos]
-    outfile.write(prefix)
+    out+=prefix
+
     if not match:
         return
     if (match.group(0)).startswith('\\if') and match.group(1) != condition \
         or match.group(0) == '\\else' and stack[-1][0] != condition \
         or match.group(0) == '\\fi' and stack[-1][0] != condition:
-            outfile.write(match.group(0))
+            out+=match.group(0)
+
+    return out
 
 
 def reduce_comment(line):
-    # Remove comments from line
+    # TODO: possible problem: '\\\\%' break line before comment
     comment = re.match(r'(?<!\\)%.*', line)
     if comment:
         pos = comment.start()
@@ -33,7 +38,7 @@ def reduce_comment(line):
         line = line[:pos]
     else:
         comment = ''
-    return (line, comment)
+    return line, comment
 
 def process_latex_file(input_filename, output_filename, condition, ignore_if):
     # Stack to keep track of \ifword conditions
@@ -50,7 +55,10 @@ def process_latex_file(input_filename, output_filename, condition, ignore_if):
 
         stack = []
         for line in infile:
-            (line, comment) = reduce_comment(line)
+            if len(line.strip()) == 0:
+                outfile.write(line)
+                continue
+            line, comment = reduce_comment(line)
 
             newif_match = newif_pattern.search(line)
             if newif_match:
@@ -59,6 +67,7 @@ def process_latex_file(input_filename, output_filename, condition, ignore_if):
                     outfile.write(line+comment)
                 continue
             
+            out=''
             # get all matches of if{condition}, else, fi using matchall
             all_matches = re.finditer(r'\\if(\w+)|\\else|\\fi', line)
             curr_match = next(all_matches, None)
@@ -66,7 +75,7 @@ def process_latex_file(input_filename, output_filename, condition, ignore_if):
 
             while curr_match:
                 if ignore_count == 0:
-                    handle_output(line, start_pos, curr_match, stack, condition, outfile)
+                    out += handle_output(line, start_pos, curr_match, stack, condition)
                     
                 if curr_match.group(0).startswith('\\if') \
                     and curr_match.group(1) in defined_ifs:
@@ -94,12 +103,15 @@ def process_latex_file(input_filename, output_filename, condition, ignore_if):
 
             if ignore_count == 0:
                 # print rest and comment
-                outfile.write(line[start_pos:] + comment)
-
+                out += line[start_pos:] + comment
+            # if lien is empty now (wasn't empty before) don't write it
+            # else might start paragraph
+            if len(out) > 1:
+                outfile.write(out)
 
 # Example usage
 input_filename = "main.tex"  # Replace with the actual LaTeX file
-output_filename = "output.tex"
+output_filename = "output1.tex"
 condition = "short"  # Replace with the desired condition to ignore
 ignore_if = True  # Set to False to ignore \else instead of \if
 process_latex_file(input_filename, output_filename, condition, ignore_if)
