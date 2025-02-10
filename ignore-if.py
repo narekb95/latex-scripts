@@ -1,5 +1,4 @@
 # TODO
-# 2. make command line arguments
 # 4. handle comment environment
 # 5. delete newif and longrue longfalse
 # 7. add command line argument to delete comments
