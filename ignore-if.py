@@ -6,6 +6,7 @@
 
 
 import re
+import argparse
 
 
 
@@ -48,7 +49,7 @@ def process_latex_file(input_filename, output_filename, conditions):
         stack = []
 
         for line in infile:
-            if len(line.strip()) == 0:
+            if ignore_count == 0 and len(line.strip()) == 0:
                 outfile.write(line)
                 continue
             line, comment = reduce_comment(line)
@@ -110,11 +111,23 @@ def process_latex_file(input_filename, output_filename, conditions):
                 out += line[start_pos:] + comment
             # if lien is empty now (wasn't empty before) don't write it
             # else might start paragraph
-            if len(out) > 1:
+            if len(out.rstrip()) > 0:
                 outfile.write(out)
 
-# Example usage
-input_filename = "main.tex"  # Replace with the actual LaTeX file
-output_filename = "output.tex"
-conditions = [("long", False), ("short", True)]  # List of conditions to ignore
-process_latex_file(input_filename, output_filename, conditions)
+def main():
+    parser = argparse.ArgumentParser(description='Process a LaTeX file with conditional ignoring \\if{word}.')
+    parser.add_argument('--input', required=True, help='Input LaTeX file')
+    parser.add_argument('--output', required=True, help='Output LaTeX file')
+    parser.add_argument('--conditions', required=True, help='Conditions to ignore in the format "condition1:true,condition2:false".\\Use true to remove the "if" branch, and false to remove the "else" branch.')
+
+    args = parser.parse_args()
+
+    input_filename = args.input
+    output_filename = args.output
+    conditions = [(cond.split(':')[0], cond.split(':')[1].lower() == 'true') for cond in args.conditions.split(',')]
+
+    process_latex_file(input_filename, output_filename, conditions)
+
+
+if __name__ == '__main__':
+    main()
