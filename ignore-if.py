@@ -8,6 +8,68 @@ import re
 import argparse
 
 
+class TokenReader:
+    """
+    A class to read and tokenize a file. It takes an input file path, an output file object, and a regular expression pattern for tokenization.
+    This class is designed to be used as an iterator by repeatedly calling the get_next_token method until it returns None.
+
+    Attributes:
+        file (file object): The file object for the input file.
+        out (file object): The file object for the output file.
+        token_expr (str): The regular expression pattern for tokenizing lines.
+        curr_line (str): The current line being processed.
+        curr_iter (iterator): An iterator over the matches of the token expression in the current line.
+        current_match (re.Match or None): The current match object. None if no match is found.
+
+    Methods:
+        __del__():
+            Closes the input file when the object is deleted.
+        read_line():
+            Reads the next line from the input file and initializes the iterator for token matches.
+        get_pos() -> int:
+            Returns the end position of the current match or 0 if there is no current match.
+        get_next_token(is_print_scope: bool) -> re.Match or None:
+            Retrieves the next token match from the current line or subsequent lines.
+            If is_print_scope is True, writes the text between the current match and the next token to the output file.
+    """
+    def __init__(self, input_path, out_file, token_expr):
+        self.file = open(input_path, 'r')
+        self.out = out_file
+        self.token_expr = token_expr
+        self.curr_line = ''
+        self.curr_iter = iter(())
+        self.current_match = None
+
+    def __del__(self):
+        self.file.close()
+
+    def read_line(self):
+        self.curr_line = self.file.readline()
+        if not self.curr_line:
+            return
+        self.curr_iter = re.finditer(self.token_expr, self.curr_line)
+        self.current_match = None
+
+
+    def get_pos(self):
+        return self.current_match.end() if self.current_match else 0
+    
+    def get_next_token(self, is_print_scope):
+        new_match = next(self.curr_iter, None)
+        while not new_match:
+            if is_print_scope:
+                self.out.write(self.curr_line[self.get_pos():])
+            self.read_line()
+            if not self.curr_line:
+                return
+            new_match = next(self.curr_iter, None)
+        if is_print_scope:
+            self.out.write(self.curr_line[self.get_pos():new_match.start()])
+        self.current_match = new_match
+        return new_match
+
+                
+
 
 def handle_output(line, curr_pos, match, matched_condition):
     out = ''
@@ -76,21 +138,15 @@ def process_latex_file(input_path, output_filename, conditions, delete_comments,
     base_path = path.dirname(input_path)
     out_path = path.join(base_path, output_filename)
     if recursive:
-        input_filename = expand_input(input_path, base_path)
+        input_path = expand_input(input_path, base_path)
     base_path = path.dirname(input_path)
-    # Stack to keep track of \ifword conditions
+    
     ignore_count = 0  # Counter to track nested \if{condition}
-
     defined_ifs = set()
-
-    # Regular expressions
     newif_pattern = re.compile(r'\\newif\\if(\w+)')
+    stack = []
 
-
-
-    with open(input_filename, 'r', encoding='utf-8') as infile, open(out_path, 'w', encoding='utf-8') as outfile:
-        stack = []
-
+    with open(input_path, 'r', encoding='utf-8') as infile, open(out_path, 'w', encoding='utf-8') as outfile:
         for i, line in enumerate(infile):
             # If line is empty and ignore_count is 0, write it
             # Empty output will be ignored otherwise
@@ -160,7 +216,7 @@ def process_latex_file(input_path, output_filename, conditions, delete_comments,
 def main():
     parser = argparse.ArgumentParser(description='Process a LaTeX file with conditional ignoring \\if{word}.')
     parser.add_argument('--input', required=True, help='Input LaTeX file')
-    parser.add_argument('--output', required=True, help='Output LaTeX file')
+    parser.add_argument('--output-file', required=True, help='Output LaTeX file')
     parser.add_argument('--conditions', required=True, help='Conditions to ignore in the format "condition1:true,condition2:false".\\Use true to remove the "if" branch, and false to remove the "else" branch.')
     parser.set_defaults(delete_comments=False)
     parser.add_argument('--delete-comments', action='store_true', help='Delete comments.')
@@ -170,13 +226,13 @@ def main():
 
     args = parser.parse_args()
 
-    input_filename = args.input
-    output_filename = args.output
+    input_path = args.input
+    output_filename = args.output_file
     conditions = [(cond.split(':')[0], cond.split(':')[1].lower() == 'true') for cond in args.conditions.split(',')]
     delete_comments = args.delete_comments
     recursive = args.recursive
 
-    process_latex_file(input_filename, output_filename, conditions, delete_comments, recursive)
+    process_latex_file(input_path, output_filename, conditions, delete_comments, recursive)
 
 
 if __name__ == '__main__':
